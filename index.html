@@ -161,5 +161,109 @@ supabaseClient.auth.getSession().then(({ data }) => {
   }
 });
 </script>
+
+  <div class="section" id="incomeSection">
+  <h2>💰 Pridanie príjmu</h2>
+
+  <form id="incomeForm">
+    <label>Auto – ŠPZ</label>
+    <select id="incomeVehicle" required></select>
+
+    <label>Mesiac</label>
+    <input type="month" id="incomeMonth" required>
+
+    <label>Príjem v Kč</label>
+    <input type="number" id="incomeAmount"
+      min="0.01" step="0.01" required>
+
+    <label>Poznámka</label>
+    <input type="text" id="incomeNote">
+
+    <button type="submit">Uložiť príjem</button>
+  </form>
+
+  <p id="incomeMessage"></p>
+</div>
+
+<style>
+#incomeSection label {
+  display:block;
+  margin-top:14px;
+  font-weight:bold;
+}
+#incomeSection input,
+#incomeSection select {
+  width:100%;
+  padding:12px;
+  margin-top:6px;
+  border:1px solid #ccc;
+  border-radius:8px;
+}
+#incomeSection button {
+  width:100%;
+  padding:14px;
+  margin-top:18px;
+  background:#172554;
+  color:white;
+  border:0;
+  border-radius:8px;
+  font-size:16px;
+}
+</style>
+
+<script>
+(async function() {
+  const form = document.getElementById('incomeForm');
+  const select = document.getElementById('incomeVehicle');
+  const message = document.getElementById('incomeMessage');
+
+  const month = new Date().toISOString().slice(0, 7);
+  document.getElementById('incomeMonth').value = month;
+
+  const { data: vehicles, error } =
+    await supabaseClient
+      .from('vehicles')
+      .select('id,name')
+      .order('id');
+
+  if (error) {
+    message.textContent = 'Chyba pri načítaní áut: ' + error.message;
+    return;
+  }
+
+  vehicles.forEach(vehicle => {
+    const option = document.createElement('option');
+    option.value = vehicle.id;
+    option.textContent = vehicle.name;
+    select.appendChild(option);
+  });
+
+  form.addEventListener('submit', async function(event) {
+    event.preventDefault();
+    message.textContent = 'Ukladám príjem...';
+
+    const selectedMonth =
+      document.getElementById('incomeMonth').value;
+
+    const { error } = await supabaseClient
+      .from('income')
+      .insert({
+        vehicle_id: Number(select.value),
+        month: selectedMonth + '-01',
+        amount: Number(document.getElementById('incomeAmount').value),
+        note: document.getElementById('incomeNote').value
+      });
+
+    if (error) {
+      message.textContent = 'Chyba: ' + error.message;
+      return;
+    }
+
+    message.textContent = 'Príjem bol úspešne uložený!';
+    form.reset();
+    document.getElementById('incomeMonth').value = month;
+  });
+})();
+</script>
 </body>
 </html>
