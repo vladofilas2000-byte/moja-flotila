@@ -89,5 +89,18 @@
   <p>Denná sadzba: 2 500 Kč</p>
 </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+const SUPABASE_URL = "https://bwyaatdzufdttxarvtry.supabase.co";
+const SUPABASE_KEY = "sb_publishable_ZQcX742K4tg3lXRKbpi4Bg_SWeeU-Jl";
+
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
+
+console.log("Supabase je pripojený.");
+</script>
 </body>
 </html>
