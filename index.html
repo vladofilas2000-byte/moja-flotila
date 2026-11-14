@@ -265,5 +265,91 @@ supabaseClient.auth.getSession().then(({ data }) => {
   });
 })();
 </script>
+
+  <div class="section" id="expensesSection">
+  <h2>💸 Pridanie nákladu</h2>
+
+  <form id="expenseForm">
+    <label>Auto – ŠPZ</label>
+    <select id="expenseVehicle" required></select>
+
+    <label>Dátum nákladu</label>
+    <input type="date" id="expenseDate" required>
+
+    <label>Kategória</label>
+    <select id="expenseCategory" required>
+      <option value="Palivo">Palivo</option>
+      <option value="Servis">Servis</option>
+      <option value="Poistenie">Poistenie</option>
+      <option value="Pneumatiky">Pneumatiky</option>
+      <option value="Leasing">Leasing</option>
+      <option value="Ostatné">Ostatné</option>
+    </select>
+
+    <label>Suma v Kč</label>
+    <input type="number" id="expenseAmount"
+      min="0.01" step="0.01" required>
+
+    <label>Poznámka</label>
+    <input type="text" id="expenseNote">
+
+    <button type="submit">Uložiť náklad</button>
+  </form>
+
+  <p id="expenseMessage"></p>
+</div>
+
+<script>
+(async function() {
+  const form = document.getElementById('expenseForm');
+  const select = document.getElementById('expenseVehicle');
+  const message = document.getElementById('expenseMessage');
+
+  document.getElementById('expenseDate').value =
+    new Date().toLocaleDateString('en-CA');
+
+  const { data: vehicles, error } = await supabaseClient
+    .from('vehicles')
+    .select('id,name')
+    .order('id');
+
+  if (error) {
+    message.textContent = 'Chyba pri načítaní áut: ' + error.message;
+    return;
+  }
+
+  vehicles.forEach(vehicle => {
+    const option = document.createElement('option');
+    option.value = vehicle.id;
+    option.textContent = vehicle.name;
+    select.appendChild(option);
+  });
+
+  form.addEventListener('submit', async function(event) {
+    event.preventDefault();
+    message.textContent = 'Ukladám náklad...';
+
+    const { error } = await supabaseClient
+      .from('expenses')
+      .insert({
+        vehicle_id: Number(select.value),
+        expense_date: document.getElementById('expenseDate').value,
+        category: document.getElementById('expenseCategory').value,
+        amount: Number(document.getElementById('expenseAmount').value),
+        note: document.getElementById('expenseNote').value
+      });
+
+    if (error) {
+      message.textContent = 'Chyba: ' + error.message;
+      return;
+    }
+
+    message.textContent = 'Náklad bol úspešne uložený!';
+    form.reset();
+    document.getElementById('expenseDate').value =
+      new Date().toLocaleDateString('en-CA');
+  });
+})();
+</script>
 </body>
 </html>
