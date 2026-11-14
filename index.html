@@ -430,5 +430,164 @@ supabaseClient.auth.getSession().then(({ data }) => {
   });
 })();
 </script>
+
+  <div class="section" id="profitDashboard">
+  <h2>📊 Finančný prehľad</h2>
+
+  <label>Vyber mesiac:</label>
+  <input type="month" id="profitMonth">
+
+  <div class="cards">
+    <div class="card">
+      Príjmy
+      <div class="value" id="totalIncome">0 Kč</div>
+    </div>
+    <div class="card">
+      Náklady
+      <div class="value" id="totalExpenses">0 Kč</div>
+    </div>
+    <div class="card">
+      Zisk flotily
+      <div class="value" id="fleetProfit">0 Kč</div>
+    </div>
+    <div class="card">
+      Hodnota mojej práce
+      <div class="value" id="ownerValue">0 Kč</div>
+    </div>
+    <div class="card">
+      Výsledok po započítaní práce
+      <div class="value" id="finalProfit">0 Kč</div>
+    </div>
+  </div>
+
+  <h3>Výsledky podľa áut</h3>
+  <div id="vehicleResults">Načítavam...</div>
+
+  <p id="profitMessage"></p>
+  <button onclick="loadProfit()">Prepočítať výsledky</button>
+</div>
+
+<script>
+const money = value =>
+  Number(value).toLocaleString('cs-CZ', {
+    maximumFractionDigits: 2
+  }) + ' Kč';
+
+async function loadProfit() {
+  const message = document.getElementById('profitMessage');
+  message.textContent = 'Počítam výsledky...';
+
+  const selectedMonth =
+    document.getElementById('profitMonth').value;
+
+  if (!selectedMonth) {
+    message.textContent = 'Vyber mesiac.';
+    return;
+  }
+
+  const start = selectedMonth + '-01';
+  const [year, month] = selectedMonth.split('-').map(Number);
+  const nextMonth = new Date(year, month, 1);
+  const end = nextMonth.toISOString().slice(0, 10);
+
+  const [vehiclesResult, incomeResult,
+         expenseResult, workResult] = await Promise.all([
+    supabaseClient.from('vehicles')
+      .select('id,name').order('id'),
+
+    supabaseClient.from('income')
+      .select('vehicle_id,amount')
+      .gte('month', start).lt('month', end),
+
+    supabaseClient.from('expenses')
+      .select('vehicle_id,amount')
+      .gte('expense_date', start).lt('expense_date', end),
+
+    supabaseClient.from('owner_work')
+      .select('vehicle_id,days_worked,daily_rate')
+      .eq('month', start)
+  ]);
+
+  const error = vehiclesResult.error ||
+    incomeResult.error || expenseResult.error ||
+    workResult.error;
+
+  if (error) {
+    message.textContent = 'Chyba: ' + error.message;
+    return;
+  }
+
+  const vehicles = vehiclesResult.data || [];
+  const incomes = incomeResult.data || [];
+  const expenses = expenseResult.data || [];
+  const work = workResult.data || [];
+
+  let totalIncome = 0;
+  let totalExpenses = 0;
+  let totalWork = 0;
+
+  const rows = vehicles.map(vehicle => {
+    const income = incomes
+      .filter(x => x.vehicle_id === vehicle.id)
+      .reduce((sum, x) => sum + Number(x.amount), 0);
+
+    const expense = expenses
+      .filter(x => x.vehicle_id === vehicle.id)
+      .reduce((sum, x) => sum + Number(x.amount), 0);
+
+    const owner = work
+      .filter(x => x.vehicle_id === vehicle.id)
+      .reduce((sum, x) =>
+        sum + Number(x.days_worked) * Number(x.daily_rate), 0);
+
+    totalIncome += income;
+    totalExpenses += expense;
+    totalWork += owner;
+
+    return {
+      name: vehicle.name,
+      income,
+      expense,
+      profit: income - expense,
+      owner,
+      final: income - expense - owner
+    };
+  });
+
+  document.getElementById('totalIncome').textContent =
+    money(totalIncome);
+
+  document.getElementById('totalExpenses').textContent =
+    money(totalExpenses);
+
+  document.getElementById('fleetProfit').textContent =
+    money(totalIncome - totalExpenses);
+
+  document.getElementById('ownerValue').textContent =
+    money(totalWork);
+
+  document.getElementById('finalProfit').textContent =
+    money(totalIncome - totalExpenses - totalWork);
+
+  document.getElementById('vehicleResults').innerHTML =
+    rows.map(x => `
+      <div class="card" style="margin:10px 0">
+        <h3>${x.name}</h3>
+        Príjmy: ${money(x.income)}<br>
+        Náklady: ${money(x.expense)}<br>
+        Zisk pred vlastnou prácou: ${money(x.profit)}<br>
+        Hodnota vlastnej práce: ${money(x.owner)}<br>
+        Výsledok po práci: <strong>${money(x.final)}</strong>
+      </div>
+    `).join('');
+
+  message.textContent = 'Výpočet úspešne dokončený.';
+}
+
+document.getElementById('profitMonth').value =
+  new Date().toISOString().slice(0, 7);
+
+loadProfit();
+</script>
 </body>
 </html>
