@@ -351,5 +351,84 @@ supabaseClient.auth.getSession().then(({ data }) => {
   });
 })();
 </script>
+
+  <div class="section" id="workSection">
+  <h2>👨‍💼 Môj pracovný výkon</h2>
+
+  <form id="workForm">
+    <label>Auto – ŠPZ</label>
+    <select id="workVehicle" required></select>
+
+    <label>Mesiac</label>
+    <input type="month" id="workMonth" required>
+
+    <label>Počet odjazdených dní</label>
+    <input type="number" id="workDays"
+      min="0" step="1" required>
+
+    <label>Moja denná sadzba (Kč)</label>
+    <input type="number" id="workRate"
+      min="0" step="0.01" value="2500" required>
+
+    <button type="submit">Uložiť pracovný výkon</button>
+  </form>
+
+  <p id="workMessage"></p>
+</div>
+
+<script>
+(async function() {
+  const form = document.getElementById('workForm');
+  const select = document.getElementById('workVehicle');
+  const message = document.getElementById('workMessage');
+
+  document.getElementById('workMonth').value =
+    new Date().toISOString().slice(0, 7);
+
+  const { data: vehicles, error } = await supabaseClient
+    .from('vehicles')
+    .select('id,name')
+    .order('id');
+
+  if (error) {
+    message.textContent = 'Chyba pri načítaní áut: ' + error.message;
+    return;
+  }
+
+  vehicles.forEach(vehicle => {
+    const option = document.createElement('option');
+    option.value = vehicle.id;
+    option.textContent = vehicle.name;
+    select.appendChild(option);
+  });
+
+  form.addEventListener('submit', async function(event) {
+    event.preventDefault();
+    message.textContent = 'Ukladám pracovný výkon...';
+
+    const month = document.getElementById('workMonth').value;
+
+    const record = {
+      vehicle_id: Number(select.value),
+      month: month + '-01',
+      days_worked: Number(document.getElementById('workDays').value),
+      daily_rate: Number(document.getElementById('workRate').value)
+    };
+
+    const { error } = await supabaseClient
+      .from('owner_work')
+      .upsert(record, {
+        onConflict: 'user_id,vehicle_id,month'
+      });
+
+    if (error) {
+      message.textContent = 'Chyba: ' + error.message;
+      return;
+    }
+
+    message.textContent = 'Pracovný výkon bol úspešne uložený!';
+  });
+})();
+</script>
 </body>
 </html>
