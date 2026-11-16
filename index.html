@@ -589,5 +589,166 @@ document.getElementById('profitMonth').value =
 
 loadProfit();
 </script>
+
+  <div class="section" id="yearDashboard">
+  <h2>📅 Ročné štatistiky</h2>
+
+  <label for="profitYear">Vyber rok:</label>
+  <input type="number" id="profitYear" min="2020" max="2100">
+
+  <button onclick="loadYearProfit()">
+    Zobraziť ročné výsledky
+  </button>
+
+  <div class="cards">
+    <div class="card">
+      Ročné príjmy
+      <div class="value" id="yearIncome">0 Kč</div>
+    </div>
+
+    <div class="card">
+      Ročné náklady
+      <div class="value" id="yearExpenses">0 Kč</div>
+    </div>
+
+    <div class="card">
+      Ročný zisk flotily
+      <div class="value" id="yearProfit">0 Kč</div>
+    </div>
+
+    <div class="card">
+      Hodnota mojej práce
+      <div class="value" id="yearWork">0 Kč</div>
+    </div>
+
+    <div class="card">
+      Výsledok po započítaní práce
+      <div class="value" id="yearFinal">0 Kč</div>
+    </div>
+  </div>
+
+  <h3>Výsledky podľa áut</h3>
+  <div id="yearVehicleResults"></div>
+  <p id="yearMessage"></p>
+</div>
+
+<script>
+async function loadYearProfit() {
+  const year = Number(
+    document.getElementById('profitYear').value
+  );
+
+  const message = document.getElementById('yearMessage');
+
+  if (!Number.isInteger(year) || year < 2020 || year > 2100) {
+    message.textContent = 'Zadaj platný rok.';
+    return;
+  }
+
+  message.textContent = 'Počítam ročné výsledky...';
+
+  const start = year + '-01-01';
+  const end = (year + 1) + '-01-01';
+
+  const [v, i, e, w] = await Promise.all([
+    supabaseClient.from('vehicles')
+      .select('id,name').order('id'),
+
+    supabaseClient.from('income')
+      .select('vehicle_id,amount')
+      .gte('month', start).lt('month', end),
+
+    supabaseClient.from('expenses')
+      .select('vehicle_id,amount')
+      .gte('expense_date', start).lt('expense_date', end),
+
+    supabaseClient.from('owner_work')
+      .select('vehicle_id,days_worked,daily_rate')
+      .gte('month', start).lt('month', end)
+  ]);
+
+  const error = v.error || i.error || e.error || w.error;
+
+  if (error) {
+    message.textContent = 'Chyba: ' + error.message;
+    return;
+  }
+
+  const money = n => Number(n).toLocaleString('cs-CZ', {
+    maximumFractionDigits: 2
+  }) + ' Kč';
+
+  let income = 0;
+  let expenses = 0;
+  let work = 0;
+
+  const rows = (v.data || []).map(car => {
+    const carIncome = (i.data || [])
+      .filter(x => x.vehicle_id === car.id)
+      .reduce((s, x) => s + Number(x.amount), 0);
+
+    const carExpenses = (e.data || [])
+      .filter(x => x.vehicle_id === car.id)
+      .reduce((s, x) => s + Number(x.amount), 0);
+
+    const carWork = (w.data || [])
+      .filter(x => x.vehicle_id === car.id)
+      .reduce((s, x) =>
+        s + Number(x.days_worked) * Number(x.daily_rate), 0);
+
+    income += carIncome;
+    expenses += carExpenses;
+    work += carWork;
+
+    return {
+      name: car.name,
+      income: carIncome,
+      expenses: carExpenses,
+      profit: carIncome - carExpenses,
+      work: carWork,
+      final: carIncome - carExpenses - carWork
+    };
+  });
+
+  document.getElementById('yearIncome').textContent = money(income);
+  document.getElementById('yearExpenses').textContent = money(expenses);
+  document.getElementById('yearProfit').textContent = money(income - expenses);
+  document.getElementById('yearWork').textContent = money(work);
+  document.getElementById('yearFinal').textContent =
+    money(income - expenses - work);
+
+  const container = document.getElementById('yearVehicleResults');
+  container.replaceChildren();
+
+  rows.forEach(car => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.margin = '10px 0';
+
+    const heading = document.createElement('h3');
+    heading.textContent = car.name;
+    card.appendChild(heading);
+
+    [
+      'Príjmy: ' + money(car.income),
+      'Náklady: ' + money(car.expenses),
+      'Zisk pred prácou: ' + money(car.profit),
+      'Hodnota práce: ' + money(car.work),
+      'Výsledok po práci: ' + money(car.final)
+    ].forEach(line => {
+      const p = document.createElement('p');
+      p.textContent = line;
+      card.appendChild(p);
+    });
+
+    container.appendChild(card);
+  });
+
+  message.textContent = 'Ročné výsledky sú vypočítané.';
+}
+
+document.getElementById('profitYear').value =
+  new Date().getFullYear();
+</script>
 </body>
 </html>
