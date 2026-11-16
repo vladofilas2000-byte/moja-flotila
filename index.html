@@ -1018,5 +1018,72 @@ async function deleteRecord(table, id) {
 loadManageRecords();
 </script>
 
+  
+<div id="monthlyWorkSection" style="margin:25px 0;padding:15px;border:1px solid #ccc;border-radius:10px;">
+  <h2>Môj mesačný zárobok za prácu</h2>
+
+  <label>Mesiac:</label>
+  <input type="month" id="monthlyWorkMonth">
+
+  <br><br>
+
+  <label>Môj zárobok za mesiac (Kč):</label>
+  <input type="number" id="monthlyWorkAmount" min="0" step="0.01" placeholder="Napríklad 60000">
+
+  <br><br>
+
+  <label>Poznámka:</label>
+  <input type="text" id="monthlyWorkNote" placeholder="Voliteľné">
+
+  <br><br>
+
+  <button onclick="saveMonthlyWork()">Uložiť mesačný zárobok</button>
+  <p id="monthlyWorkMessage"></p>
+</div>
+
+<script>
+document.getElementById('monthlyWorkMonth').value =
+  new Date().toISOString().slice(0, 7);
+
+async function saveMonthlyWork() {
+  const month = document.getElementById('monthlyWorkMonth').value;
+  const amount = document.getElementById('monthlyWorkAmount').value;
+  const note = document.getElementById('monthlyWorkNote').value;
+
+  if (!month || amount === '' || !Number.isFinite(Number(amount)) || Number(amount) < 0) {
+    alert('Vyplň mesiac a platnú sumu.');
+    return;
+  }
+
+  const { data: userData, error: userError } =
+    await supabaseClient.auth.getUser();
+
+  if (userError || !userData.user) {
+    alert('Najprv sa prihlás.');
+    return;
+  }
+
+  const { error } = await supabaseClient
+    .from('monthly_work_income')
+    .upsert({
+      user_id: userData.user.id,
+      month: month + '-01',
+      amount: Number(amount),
+      note: note
+    }, { onConflict: 'user_id,month' });
+
+  if (error) {
+    alert('Chyba pri ukladaní: ' + error.message);
+    return;
+  }
+
+  document.getElementById('monthlyWorkMessage').textContent =
+    'Mesačný zárobok bol uložený.';
+
+  if (typeof loadProfit === 'function') loadProfit();
+  if (typeof loadYearProfit === 'function') loadYearProfit();
+}
+</script>
+
 </body>
 </html>
