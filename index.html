@@ -750,5 +750,96 @@ async function loadYearProfit() {
 document.getElementById('profitYear').value =
   new Date().getFullYear();
 </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+<div id="excelExport" style="margin:25px 0;padding:15px;border:1px solid #ccc;border-radius:10px;">
+  <h2>Export do Excelu</h2>
+  <button onclick="exportExcel('month')" style="padding:12px;margin:5px;">
+    Exportovať mesačné štatistiky
+  </button>
+  <button onclick="exportExcel('year')" style="padding:12px;margin:5px;">
+    Exportovať ročné štatistiky
+  </button>
+</div>
+
+<script>
+async function exportExcel(type) {
+  if (typeof XLSX === 'undefined') {
+    alert('Excel sa ešte načítava. Skús to o chvíľu.');
+    return;
+  }
+
+  const period = type === 'month'
+    ? document.getElementById('profitMonth').value
+    : document.getElementById('profitYear').value;
+
+  if (!period) {
+    alert('Najprv vyber obdobie.');
+    return;
+  }
+
+  const start = type === 'month' ? period + '-01' : period + '-01-01';
+  const endDate = type === 'month'
+    ? new Date(Number(period.slice(0,4)), Number(period.slice(5,7)), 1)
+    : new Date(Number(period) + 1, 0, 1);
+
+const end = endDate.getFullYear() + '-' +
+  String(endDate.getMonth() + 1).padStart(2, '0') + '-' +
+  String(endDate.getDate()).padStart(2, '0');
+
+  const [v, i, e, w] = await Promise.all([
+    supabaseClient.from('vehicles').select('id,name').order('id'),
+    supabaseClient.from('income').select('vehicle_id,month,amount,note').gte('month', start).lt('month', end),
+    supabaseClient.from('expenses').select('vehicle_id,expense_date,category,amount,note').gte('expense_date', start).lt('expense_date', end),
+    supabaseClient.from('owner_work').select('vehicle_id,month,days_worked,daily_rate').gte('month', start).lt('month', end)
+  ]);
+
+  if (v.error || i.error || e.error || w.error) {
+    alert('Chyba pri načítaní údajov. Skontroluj prihlásenie.');
+    return;
+  }
+
+  const vehicles = v.data || [];
+  const income = i.data || [];
+  const expenses = e.data || [];
+  const work = w.data || [];
+
+  const totalIncome = income.reduce((s,x) => s + Number(x.amount), 0);
+  const totalExpenses = expenses.reduce((s,x) => s + Number(x.amount), 0);
+  const workValue = work.reduce((s,x) => s + Number(x.days_worked) * Number(x.daily_rate), 0);
+
+  const summary = [
+    ['Ukazovateľ', 'Suma (Kč)'],
+    ['Príjmy', totalIncome],
+    ['Náklady', totalExpenses],
+    ['Zisk flotily', totalIncome - totalExpenses],
+    ['Hodnota mojej práce', workValue],
+    ['Výsledok po započítaní práce', totalIncome - totalExpenses - workValue]
+  ];
+
+  const carRows = [['Vozidlo', 'Príjmy (Kč)', 'Náklady (Kč)', 'Hodnota práce (Kč)', 'Výsledok (Kč)']];
+
+  vehicles.forEach(car => {
+    const ci = income.filter(x => x.vehicle_id === car.id)
+      .reduce((s,x) => s + Number(x.amount), 0);
+    const ce = expenses.filter(x => x.vehicle_id === car.id)
+      .reduce((s,x) => s + Number(x.amount), 0);
+    const cw = work.filter(x => x.vehicle_id === car.id)
+      .reduce((s,x) => s + Number(x.days_worked) * Number(x.daily_rate), 0);
+
+    carRows.push([car.name, ci, ce, cw, ci - ce - cw]);
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), 'Súhrn');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(carRows), 'Vozidlá');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(income), 'Príjmy');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expenses), 'Náklady');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(work), 'Moja práca');
+
+  XLSX.writeFile(wb, 'Flotila_' + period + '.xlsx');
+}
+</script>
 </body>
 </html>
