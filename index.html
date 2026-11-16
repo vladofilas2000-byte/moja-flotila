@@ -841,5 +841,182 @@ const end = endDate.getFullYear() + '-' +
   XLSX.writeFile(wb, 'Flotila_' + period + '.xlsx');
 }
 </script>
+
+  
+<div id="manageRecords" style="margin:25px 0;padding:15px;border:1px solid #ccc;border-radius:10px;">
+  <h2>Správa príjmov a výdavkov</h2>
+
+  <h3>Príjmy</h3>
+  <div id="incomeRecords">Načítavam...</div>
+
+  <h3>Výdavky</h3>
+  <div id="expenseRecords">Načítavam...</div>
+
+  <button onclick="loadManageRecords()" style="padding:12px;margin-top:15px;">
+    Obnoviť zoznam
+  </button>
+</div>
+
+<script>
+async function loadManageRecords() {
+  const incomeBox = document.getElementById('incomeRecords');
+  const expenseBox = document.getElementById('expenseRecords');
+
+  incomeBox.textContent = 'Načítavam...';
+  expenseBox.textContent = 'Načítavam...';
+
+  const [v, i, e] = await Promise.all([
+    supabaseClient.from('vehicles').select('id,name'),
+    supabaseClient.from('income').select('*').order('month', {ascending:false}),
+    supabaseClient.from('expenses').select('*').order('expense_date', {ascending:false})
+  ]);
+
+  if (v.error || i.error || e.error) {
+    incomeBox.textContent = 'Chyba pri načítaní údajov.';
+    expenseBox.textContent = 'Skontroluj prihlásenie.';
+    return;
+  }
+
+  const vehicles = v.data || [];
+  const vehicleName = id => vehicles.find(x => x.id === id)?.name || 'Neznáme vozidlo';
+
+  function addRow(box, fields, editFunction, deleteFunction) {
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:10px;border-bottom:1px solid #ddd;';
+
+    const info = document.createElement('div');
+    info.textContent = fields.join(' | ');
+    row.appendChild(info);
+
+    const edit = document.createElement('button');
+    edit.textContent = 'Upraviť';
+    edit.style.margin = '6px';
+    edit.onclick = editFunction;
+    row.appendChild(edit);
+
+    const del = document.createElement('button');
+    del.textContent = 'Vymazať';
+    del.style.margin = '6px';
+    del.onclick = deleteFunction;
+    row.appendChild(del);
+
+    box.appendChild(row);
+  }
+
+  incomeBox.replaceChildren();
+  if (!i.data.length) incomeBox.textContent = 'Zatiaľ žiadne príjmy.';
+
+  (i.data || []).forEach(x => {
+    addRow(incomeBox, [
+      vehicleName(x.vehicle_id),
+      x.month,
+      Number(x.amount).toLocaleString('cs-CZ') + ' Kč',
+      x.note || ''
+    ], () => editIncome(x), () => deleteRecord('income', x.id));
+  });
+
+  expenseBox.replaceChildren();
+  if (!e.data.length) expenseBox.textContent = 'Zatiaľ žiadne výdavky.';
+
+  (e.data || []).forEach(x => {
+    addRow(expenseBox, [
+      vehicleName(x.vehicle_id),
+      x.expense_date,
+      x.category,
+      Number(x.amount).toLocaleString('cs-CZ') + ' Kč',
+      x.note || ''
+    ], () => editExpense(x), () => deleteRecord('expenses', x.id));
+  });
+}
+
+async function editIncome(x) {
+  const month = prompt('Mesiac (RRRR-MM):', x.month.slice(0,7));
+  if (month === null) return;
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    alert('Zadaj mesiac vo formáte RRRR-MM.');
+    return;
+  }
+
+  const amount = prompt('Suma v Kč:', x.amount);
+  if (amount === null) return;
+  if (amount.trim() === '' || !Number.isFinite(Number(amount)) || Number(amount) < 0) {
+    alert('Zadaj platnú sumu.');
+    return;
+  }
+
+  const note = prompt('Poznámka:', x.note || '');
+  if (note === null) return;
+
+  const {error} = await supabaseClient.from('income')
+    .update({
+      month: month + '-01',
+      amount: Number(amount),
+      note: note
+    }).eq('id', x.id);
+
+  if (error) alert('Chyba pri úprave: ' + error.message);
+  else {
+    alert('Príjem bol upravený.');
+    loadManageRecords();
+    if (typeof loadProfit === 'function') loadProfit();
+    if (typeof loadYearProfit === 'function') loadYearProfit();
+  }
+}
+
+async function editExpense(x) {
+  const date = prompt('Dátum (RRRR-MM-DD):', x.expense_date);
+  if (date === null) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) {
+    alert('Zadaj dátum vo formáte RRRR-MM-DD.');
+    return;
+  }
+
+  const category = prompt('Kategória:', x.category);
+  if (category === null || !category.trim()) return;
+
+  const amount = prompt('Suma v Kč:', x.amount);
+  if (amount === null) return;
+  if (amount.trim() === '' || !Number.isFinite(Number(amount)) || Number(amount) < 0) {
+    alert('Zadaj platnú sumu.');
+    return;
+  }
+
+  const note = prompt('Poznámka:', x.note || '');
+  if (note === null) return;
+
+  const {error} = await supabaseClient.from('expenses')
+    .update({
+      expense_date: date,
+      category: category.trim(),
+      amount: Number(amount),
+      note: note
+    }).eq('id', x.id);
+
+  if (error) alert('Chyba pri úprave: ' + error.message);
+  else {
+    alert('Výdavok bol upravený.');
+    loadManageRecords();
+    if (typeof loadProfit === 'function') loadProfit();
+    if (typeof loadYearProfit === 'function') loadYearProfit();
+  }
+}
+
+async function deleteRecord(table, id) {
+  if (!confirm('Naozaj chceš tento záznam vymazať?')) return;
+
+  const {error} = await supabaseClient.from(table).delete().eq('id', id);
+
+  if (error) alert('Chyba pri vymazaní: ' + error.message);
+  else {
+    alert('Záznam bol vymazaný.');
+    loadManageRecords();
+    if (typeof loadProfit === 'function') loadProfit();
+    if (typeof loadYearProfit === 'function') loadYearProfit();
+  }
+}
+
+loadManageRecords();
+</script>
+
 </body>
 </html>
