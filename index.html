@@ -477,8 +477,7 @@ async function loadProfit() {
   const message = document.getElementById('profitMessage');
   message.textContent = 'Počítam výsledky...';
 
-  const selectedMonth =
-    document.getElementById('profitMonth').value;
+  const selectedMonth = document.getElementById('profitMonth').value;
 
   if (!selectedMonth) {
     message.textContent = 'Vyber mesiac.';
@@ -488,29 +487,30 @@ async function loadProfit() {
   const start = selectedMonth + '-01';
   const [year, month] = selectedMonth.split('-').map(Number);
   const nextMonth = new Date(year, month, 1);
-  const end = nextMonth.toISOString().slice(0, 10);
+  const end = nextMonth.getFullYear() + '-' +
+    String(nextMonth.getMonth() + 1).padStart(2, '0') + '-' +
+    String(nextMonth.getDate()).padStart(2, '0');
 
-  const [vehiclesResult, incomeResult,
-         expenseResult, workResult] = await Promise.all([
-    supabaseClient.from('vehicles')
-      .select('id,name').order('id'),
+  const [vehiclesResult, incomeResult, expenseResult, workResult] =
+    await Promise.all([
+      supabaseClient.from('vehicles')
+        .select('id,name').order('id'),
 
-    supabaseClient.from('income')
-      .select('vehicle_id,amount')
-      .gte('month', start).lt('month', end),
+      supabaseClient.from('income')
+        .select('vehicle_id,amount')
+        .gte('month', start).lt('month', end),
 
-    supabaseClient.from('expenses')
-      .select('vehicle_id,amount')
-      .gte('expense_date', start).lt('expense_date', end),
+      supabaseClient.from('expenses')
+        .select('vehicle_id,amount')
+        .gte('expense_date', start).lt('expense_date', end),
 
-    supabaseClient.from('owner_work')
-      .select('vehicle_id,days_worked,daily_rate')
-      .eq('month', start)
-  ]);
+      supabaseClient.from('monthly_work_income')
+        .select('amount')
+        .eq('month', start)
+    ]);
 
-  const error = vehiclesResult.error ||
-    incomeResult.error || expenseResult.error ||
-    workResult.error;
+  const error = vehiclesResult.error || incomeResult.error ||
+    expenseResult.error || workResult.error;
 
   if (error) {
     message.textContent = 'Chyba: ' + error.message;
@@ -524,7 +524,10 @@ async function loadProfit() {
 
   let totalIncome = 0;
   let totalExpenses = 0;
-  let totalWork = 0;
+
+  const totalWork = work.reduce(
+    (sum, x) => sum + Number(x.amount), 0
+  );
 
   const rows = vehicles.map(vehicle => {
     const income = incomes
@@ -535,22 +538,14 @@ async function loadProfit() {
       .filter(x => x.vehicle_id === vehicle.id)
       .reduce((sum, x) => sum + Number(x.amount), 0);
 
-    const owner = work
-      .filter(x => x.vehicle_id === vehicle.id)
-      .reduce((sum, x) =>
-        sum + Number(x.days_worked) * Number(x.daily_rate), 0);
-
     totalIncome += income;
     totalExpenses += expense;
-    totalWork += owner;
 
     return {
       name: vehicle.name,
       income,
       expense,
-      profit: income - expense,
-      owner,
-      final: income - expense - owner
+      profit: income - expense
     };
   });
 
@@ -575,9 +570,7 @@ async function loadProfit() {
         <h3>${x.name}</h3>
         Príjmy: ${money(x.income)}<br>
         Náklady: ${money(x.expense)}<br>
-        Zisk pred vlastnou prácou: ${money(x.profit)}<br>
-        Hodnota vlastnej práce: ${money(x.owner)}<br>
-        Výsledok po práci: <strong>${money(x.final)}</strong>
+        Zisk vozidla: <strong>${money(x.profit)}</strong>
       </div>
     `).join('');
 
@@ -634,16 +627,8 @@ loadProfit();
 
 <script>
 async function loadYearProfit() {
-  const year = Number(
-    document.getElementById('profitYear').value
-  );
-
+  const year = Number(document.getElementById('profitYear').value);
   const message = document.getElementById('yearMessage');
-
-  if (!Number.isInteger(year) || year < 2020 || year > 2100) {
-    message.textContent = 'Zadaj platný rok.';
-    return;
-  }
 
   message.textContent = 'Počítam ročné výsledky...';
 
@@ -662,8 +647,8 @@ async function loadYearProfit() {
       .select('vehicle_id,amount')
       .gte('expense_date', start).lt('expense_date', end),
 
-    supabaseClient.from('owner_work')
-      .select('vehicle_id,days_worked,daily_rate')
+    supabaseClient.from('monthly_work_income')
+      .select('amount')
       .gte('month', start).lt('month', end)
   ]);
 
@@ -680,35 +665,61 @@ async function loadYearProfit() {
 
   let income = 0;
   let expenses = 0;
-  let work = 0;
+
+  const work = (w.data || []).reduce(
+    (sum, x) => sum + Number(x.amount), 0
+  );
 
   const rows = (v.data || []).map(car => {
     const carIncome = (i.data || [])
       .filter(x => x.vehicle_id === car.id)
-      .reduce((s, x) => s + Number(x.amount), 0);
+      .reduce((sum, x) => sum + Number(x.amount), 0);
 
     const carExpenses = (e.data || [])
       .filter(x => x.vehicle_id === car.id)
-      .reduce((s, x) => s + Number(x.amount), 0);
-
-    const carWork = (w.data || [])
-      .filter(x => x.vehicle_id === car.id)
-      .reduce((s, x) =>
-        s + Number(x.days_worked) * Number(x.daily_rate), 0);
+      .reduce((sum, x) => sum + Number(x.amount), 0);
 
     income += carIncome;
     expenses += carExpenses;
-    work += carWork;
 
     return {
       name: car.name,
       income: carIncome,
       expenses: carExpenses,
-      profit: carIncome - carExpenses,
-      work: carWork,
-      final: carIncome - carExpenses - carWork
+      profit: carIncome - carExpenses
     };
   });
+
+  document.getElementById('yearIncome').textContent =
+    money(income);
+
+  document.getElementById('yearExpenses').textContent =
+    money(expenses);
+
+  document.getElementById('yearProfit').textContent =
+    money(income - expenses);
+
+  document.getElementById('yearWork').textContent =
+    money(work);
+
+  document.getElementById('yearFinal').textContent =
+    money(income - expenses - work);
+
+  document.getElementById('yearVehicleResults').innerHTML =
+    rows.map(x => `
+      <div class="card" style="margin:10px 0">
+        <h3>${x.name}</h3>
+        Príjmy: ${money(x.income)}<br>
+        Náklady: ${money(x.expenses)}<br>
+        Zisk vozidla: <strong>${money(x.profit)}</strong>
+      </div>
+    `).join('');
+
+  message.textContent = 'Ročný výpočet úspešne dokončený.';
+}
+
+document.getElementById('profitYear').value =
+  new Date().getFullYear();
 
   document.getElementById('yearIncome').textContent = money(income);
   document.getElementById('yearExpenses').textContent = money(expenses);
@@ -779,20 +790,33 @@ async function exportExcel(type) {
     return;
   }
 
-  const start = type === 'month' ? period + '-01' : period + '-01-01';
+  const start = type === 'month'
+    ? period + '-01'
+    : period + '-01-01';
+
   const endDate = type === 'month'
-    ? new Date(Number(period.slice(0,4)), Number(period.slice(5,7)), 1)
+    ? new Date(Number(period.slice(0, 4)), Number(period.slice(5, 7)), 1)
     : new Date(Number(period) + 1, 0, 1);
 
-const end = endDate.getFullYear() + '-' +
-  String(endDate.getMonth() + 1).padStart(2, '0') + '-' +
-  String(endDate.getDate()).padStart(2, '0');
+  const end = endDate.getFullYear() + '-' +
+    String(endDate.getMonth() + 1).padStart(2, '0') + '-' +
+    String(endDate.getDate()).padStart(2, '0');
 
   const [v, i, e, w] = await Promise.all([
-    supabaseClient.from('vehicles').select('id,name').order('id'),
-    supabaseClient.from('income').select('vehicle_id,month,amount,note').gte('month', start).lt('month', end),
-    supabaseClient.from('expenses').select('vehicle_id,expense_date,category,amount,note').gte('expense_date', start).lt('expense_date', end),
-    supabaseClient.from('owner_work').select('vehicle_id,month,days_worked,daily_rate').gte('month', start).lt('month', end)
+    supabaseClient.from('vehicles')
+      .select('id,name').order('id'),
+
+    supabaseClient.from('income')
+      .select('vehicle_id,month,amount,note')
+      .gte('month', start).lt('month', end),
+
+    supabaseClient.from('expenses')
+      .select('vehicle_id,expense_date,category,amount,note')
+      .gte('expense_date', start).lt('expense_date', end),
+
+    supabaseClient.from('monthly_work_income')
+      .select('month,amount,note')
+      .gte('month', start).lt('month', end)
   ]);
 
   if (v.error || i.error || e.error || w.error) {
@@ -805,57 +829,92 @@ const end = endDate.getFullYear() + '-' +
   const expenses = e.data || [];
   const work = w.data || [];
 
-  const totalIncome = income.reduce((s,x) => s + Number(x.amount), 0);
-  const totalExpenses = expenses.reduce((s,x) => s + Number(x.amount), 0);
-  const workValue = work.reduce((s,x) => s + Number(x.days_worked) * Number(x.daily_rate), 0);
+  const totalIncome = income.reduce(
+    (s, x) => s + Number(x.amount), 0
+  );
+
+  const totalExpenses = expenses.reduce(
+    (s, x) => s + Number(x.amount), 0
+  );
+
+  const workValue = work.reduce(
+    (s, x) => s + Number(x.amount), 0
+  );
 
   const summary = [
     ['Ukazovateľ', 'Suma (Kč)'],
     ['Príjmy', totalIncome],
     ['Náklady', totalExpenses],
     ['Zisk flotily', totalIncome - totalExpenses],
-    ['Hodnota mojej práce', workValue],
-    ['Výsledok po započítaní práce', totalIncome - totalExpenses - workValue]
+    ['Môj mesačný zárobok za prácu', workValue],
+    ['Výsledok po započítaní práce',
+      totalIncome - totalExpenses - workValue]
   ];
 
-  const carRows = [['Vozidlo', 'Príjmy (Kč)', 'Náklady (Kč)', 'Hodnota práce (Kč)', 'Výsledok (Kč)']];
+  const carRows = [
+    ['Vozidlo', 'Príjmy (Kč)', 'Náklady (Kč)', 'Zisk (Kč)']
+  ];
 
   vehicles.forEach(car => {
-    const ci = income.filter(x => x.vehicle_id === car.id)
-      .reduce((s,x) => s + Number(x.amount), 0);
-    const ce = expenses.filter(x => x.vehicle_id === car.id)
-      .reduce((s,x) => s + Number(x.amount), 0);
-    const cw = work.filter(x => x.vehicle_id === car.id)
-      .reduce((s,x) => s + Number(x.days_worked) * Number(x.daily_rate), 0);
+    const ci = income
+      .filter(x => x.vehicle_id === car.id)
+      .reduce((s, x) => s + Number(x.amount), 0);
 
-    carRows.push([car.name, ci, ce, cw, ci - ce - cw]);
+    const ce = expenses
+      .filter(x => x.vehicle_id === car.id)
+      .reduce((s, x) => s + Number(x.amount), 0);
+
+    carRows.push([
+      car.name,
+      ci,
+      ce,
+      ci - ce
+    ]);
   });
 
+  const workRows = [
+    ['Mesiac', 'Môj zárobok (Kč)', 'Poznámka'],
+    ...work.map(x => [
+      x.month,
+      Number(x.amount),
+      x.note || ''
+    ])
+  ];
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), 'Súhrn');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(carRows), 'Vozidlá');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(income), 'Príjmy');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expenses), 'Náklady');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(work), 'Moja práca');
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet(summary),
+    'Súhrn'
+  );
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet(carRows),
+    'Vozidlá'
+  );
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(income),
+    'Príjmy'
+  );
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(expenses),
+    'Náklady'
+  );
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet(workRows),
+    'Môj zárobok'
+  );
 
   XLSX.writeFile(wb, 'Flotila_' + period + '.xlsx');
 }
-</script>
-
-  
-<div id="manageRecords" style="margin:25px 0;padding:15px;border:1px solid #ccc;border-radius:10px;">
-  <h2>Správa príjmov a výdavkov</h2>
-
-  <h3>Príjmy</h3>
-  <div id="incomeRecords">Načítavam...</div>
-
-  <h3>Výdavky</h3>
-  <div id="expenseRecords">Načítavam...</div>
-
-  <button onclick="loadManageRecords()" style="padding:12px;margin-top:15px;">
-    Obnoviť zoznam
-  </button>
-</div>
 
 <script>
 async function loadManageRecords() {
